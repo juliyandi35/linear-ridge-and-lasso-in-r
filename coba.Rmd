@@ -1,0 +1,234 @@
+---
+title: "Untitled"
+author: "Luthfi"
+date: '2025-05-26'
+output: html_document
+---
+```{r}
+lokasi <- file.choose() #pilih data mentahan dari Kaggle
+```
+
+```{r}
+data <- read.csv(lokasi,header=T,na.strings = "NA")
+# View(data)
+head(data)
+
+databersih <- data[,c(4:5,15:26)]
+# databersih <- data[,-c(1:3,6:14)]
+
+colnames(databersih) <- c("incidence", "reported", "ruraltotal",
+                          "ruralgrowth", "urbantotal", "urbangrowth",
+                          "waterpop", "waterrural", "waterurban",
+                          "sanitationpop", "sanitationrural", "sanitationurban", "latitude","longitude")
+
+databersih$latitude <- round(databersih$latitude,3)
+databersih$longitude <- round(databersih$longitude,3)
+databersih <- na.omit(databersih)
+# View(databersih)
+head(databersih)
+str(databersih)
+```
+
+```{r}
+# Pastikan library terinstal
+#install.packages("e1071")
+library(e1071)
+
+# Hitung skewness tiap variabel
+skew_values <- sapply(databersih, skewness, na.rm = TRUE)
+print(round(skew_values, 2))
+
+```
+
+```{r}
+# Transformasi log 
+# Muat package
+library(dplyr)
+
+databersih$incidence_log <- log(databersih$incidence + 1)
+databersih$reported_log <- log(databersih$reported + 1)
+databersih$urbantotal_log <- log(databersih$urbantotal + 1)
+databersih$waterpop_log <- log(databersih$waterpop + 1)
+databersih$waterrural_log <- log(databersih$waterrural + 1)
+databersih$sanitationpop_log <- log(databersih$sanitationpop + 1)
+databersih$sanitationrural_log <- log(databersih$sanitationrural + 1)
+databersih$sanitationurban_log <- log(databersih$sanitationurban + 1)
+
+databersih$ruraltotal_log <- log(max(databersih$ruraltotal, na.rm = TRUE) - databersih$ruraltotal + 1)
+
+databersih$ruralgrowth_log <- log(max(databersih$ruralgrowth, na.rm = TRUE) - databersih$ruralgrowth + 1)
+
+databersih$urbangrowth_log <- log(max(databersih$urbangrowth, na.rm = TRUE) - databersih$urbangrowth + 1)
+
+databersih$waterurban_log <- log(max(databersih$waterurban, na.rm = TRUE) - databersih$waterurban + 1)
+
+```
+
+```{r}
+for (i in 15:26) {
+  print(skewness(databersih[,i]))
+}
+```
+
+```{r}
+# Buat data frame baru berisi hanya variabel hasil log-transformasi
+log_data <- databersih %>%
+  dplyr::select(ends_with("_log"))
+
+# scaling data
+log_data_scaled <- as.data.frame(scale(log_data)) # Transformasi Z-Score
+
+```
+
+```{r}
+# Pisahkan antara fitur prediktor dan target (y = incidence_log)
+y_all <- log_data_scaled$incidence_log
+x_all <- log_data_scaled[, names(log_data_scaled) != "incidence_log"]
+
+# Bagi menjadi data training dan testing
+set.seed(123)
+n <- nrow(log_data_scaled)
+train_index <- sample(1:n, size = 0.7 * n)
+
+x_train <- x_all[train_index, ]
+y_train <- y_all[train_index]
+
+x_test <- x_all[-train_index, ]
+y_test <- y_all[-train_index]
+
+train_data <- cbind(incidence_log = y_train, x_train)
+test_data <- cbind(incidence_log = y_test, x_test)
+
+
+```
+
+```{r}
+# Regresi Linear
+model_lm <- lm(incidence_log ~ ., data = as.data.frame(train_data))
+summary(model_lm)
+
+
+```
+
+```{r}
+# install.packages("car")
+library(car)
+
+# Uji VIF untuk model regresi linear
+vif(model_lm)
+
+```
+
+```{r}
+# Residual dari model regresi
+resid_lm <- residuals(model_lm)
+
+# Histogram residual
+hist(resid_lm, main = "Histogram Residual", xlab = "Residual", col = "lightblue", breaks = 20)
+
+# QQ Plot
+qqnorm(resid_lm)
+qqline(resid_lm, col = "red")
+
+shapiro.test(resid_lm)
+
+```
+
+```{r}
+plot(model_lm$fitted.values, resid_lm,
+     xlab = "Fitted Values", ylab = "Residuals",
+     main = "Plot Fitted vs Residuals")
+abline(h = 0, col = "red")
+
+# install.packages("lmtest")
+library(lmtest)
+
+# Uji Breusch-Pagan
+bptest(model_lm)
+```
+
+```{r}
+# Ridge Regression
+library(glmnet)
+
+x_train_matrix <- as.matrix(x_train)
+x_test_matrix <- as.matrix(x_test)
+
+set.seed(123)
+cv_ridge <- cv.glmnet(x_train_matrix, y_train, alpha = 0)
+plot(cv_ridge)
+best_lambda_ridge <- cv_ridge$lambda.min
+
+model_ridge <- glmnet(x_train_matrix, y_train, alpha = 0, lambda = best_lambda_ridge)
+
+```
+
+```{r}
+# Lasso Regression
+set.seed(123)
+cv_lasso <- cv.glmnet(x_train_matrix, y_train, alpha = 1)
+plot(cv_lasso)
+best_lambda_lasso <- cv_lasso$lambda.min
+
+model_lasso <- glmnet(x_train_matrix, y_train, alpha = 1, lambda = best_lambda_lasso)
+
+```
+
+```{r}
+# Evaluasi RMSE
+rmse <- function(actual, predicted) {
+  sqrt(mean((actual - predicted)^2))
+}
+
+pred_lm <- predict(model_lm, newdata = as.data.frame(test_data))
+pred_ridge <- predict(model_ridge, s = best_lambda_ridge, newx = x_test_matrix)
+pred_lasso <- predict(model_lasso, s = best_lambda_lasso, newx = x_test_matrix)
+
+library(Metrics)
+data.frame(
+  Model = c("Linear", "Ridge", "Lasso"),
+  RMSE = c(
+    rmse(y_test, pred_lm),
+    rmse(y_test, pred_ridge),
+    rmse(y_test, pred_lasso)))
+```
+
+```{r}
+mse <- function(actual, predicted) {
+  mean((actual - predicted)^2)
+}
+
+# Training linear
+pred_train_lm <- predict(model_lm, newdata = as.data.frame(train_data))
+mse_train_lm <- mse(y_train, pred_train_lm)
+
+# Testing linear
+pred_test_lm <- predict(model_lm, newdata = as.data.frame(test_data))
+mse_test_lm <- mse(y_test, pred_test_lm)
+
+# Training ridge
+pred_train_ridge <- predict(model_ridge, s = best_lambda_ridge, newx = x_train_matrix)
+mse_train_ridge <- mse(y_train, pred_train_ridge)
+
+# Testing ridge
+pred_test_ridge <- predict(model_ridge, s = best_lambda_ridge, newx = x_test_matrix)
+mse_test_ridge <- mse(y_test, pred_test_ridge)
+
+# Training lasso
+pred_train_lasso <- predict(model_lasso, s = best_lambda_lasso, newx = x_train_matrix)
+mse_train_lasso <- mse(y_train, pred_train_lasso)
+
+# Testing lasso
+pred_test_lasso <- predict(model_lasso, s = best_lambda_lasso, newx = x_test_matrix)
+mse_test_lasso <- mse(y_test, pred_test_lasso)
+
+```
+
+
+```{r}
+data.frame(
+  Model = c("Linear", "Ridge", "Lasso"),
+  Train_MSE = c(mse_train_lm, mse_train_ridge, mse_train_lasso),
+  Test_MSE = c(mse_test_lm, mse_test_ridge, mse_test_lasso)
+)
+```

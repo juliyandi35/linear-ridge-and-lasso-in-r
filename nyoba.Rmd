@@ -1,0 +1,688 @@
+---
+title: "scaled"
+author: "Luthfi"
+date: '2025-02-28'
+output: pdf_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r}
+lokasi <- file.choose() #pilih data mentahan dari Kaggle
+```
+
+```{r}
+data <- read.csv(lokasi,header=T,na.strings = "NA")
+View(data)
+
+databersih <- data[,c(4,5,15,16,17,18,19,20,21,22,23,24,25,26)]
+
+namakolom <- colnames(databersih)
+names(databersih)[names(databersih) == namakolom[1]] <- "incidence"
+names(databersih)[names(databersih) == namakolom[2]] <- "reported"
+names(databersih)[names(databersih) == namakolom[3]] <- "ruraltotal"
+names(databersih)[names(databersih) == namakolom[4]] <- "ruralgrowth"
+names(databersih)[names(databersih) == namakolom[5]] <- "urbantotal"
+names(databersih)[names(databersih) == namakolom[6]] <- "urbangrowth"
+names(databersih)[names(databersih) == namakolom[7]] <- "waterpop"
+names(databersih)[names(databersih) == namakolom[8]] <- "waterrural"
+names(databersih)[names(databersih) == namakolom[9]] <- "waterurban"
+names(databersih)[names(databersih) == namakolom[10]] <- "sanitationpop"
+names(databersih)[names(databersih) == namakolom[11]] <- "sanitationrural"
+names(databersih)[names(databersih) == namakolom[12]] <- "sanitationurban"
+databersih$latitude <- round(databersih$latitude,3)
+databersih$longitude <- round(databersih$longitude,3)
+databersih <- na.omit(databersih)
+View(databersih)
+str(databersih)
+```
+
+```{r}
+# Install dan load package yang dibutuhkan
+install.packages(c("ggplot2", "dplyr", "corrplot", "skimr", "DataExplorer"))
+library(ggplot2)
+library(dplyr)
+library(corrplot)
+library(skimr)
+library(DataExplorer)
+```
+
+```{r}
+summary(databersih)  # Statistik deskriptif
+```
+
+```{r}
+nrow(databersih)
+```
+
+```{r}
+databersih_scaled <- as.data.frame(scale(databersih))
+str(databersih_scaled)
+summary(databersih_scaled)
+```
+
+```{r}
+# Variabel Prediktor (x) dan Target (y)
+x <- model.matrix(incidence ~ ., databersih_scaled)[, -1]
+y <- databersih_scaled$incidence
+
+set.seed(42)
+train <- sample(1:nrow(x), round(0.7 * nrow(x)))  # 70% training
+test <- setdiff(1:nrow(x), train)  # 30% testing
+y.test <- y[test]
+
+```
+
+```{r}
+#mod0 <- lm(incidence~Age, data=databersih)
+#summary(mod0)
+```
+
+```{r}
+#mod1 <- lm(incidence~.,data=data)
+#summary(mod1)
+```
+
+```{r}
+# Pisahkan variabel bebas dan terikat
+#y <- data$incidence
+#X <- model.matrix(incidence ~ ., data = data)[, -1]
+
+# Ridge regression (alpha = 0 untuk Ridge) dengan lambda = 0.01
+#ridge_model <- glmnet(X, y, alpha = 0, lambda = 0.01)
+
+# Tampilkan koefisien
+#coef(ridge_model)
+```
+
+```{r}
+mod.lengkap <- lm(incidence~.,data=databersih_scaled)
+summary(mod.lengkap)
+```
+
+```{r}
+#untuk variabel kategorik
+#str(pakai)
+#pakai$Gender <- as.factor(pakai$Gender)
+#pakai$Sport <- as.factor(pakai$Sport)
+#mod.lengkap1 <- lm(Waistline~Age+Mass+Height+Gender+relevel(Sport,ref="low"),data=pakai)
+#summary(mod.lengkap1)
+```
+
+```{r}
+#Regresi Linear
+lm.model <- lm(`incidence` ~ ., data = databersih_scaled[train, ])
+lm.pred <- predict(lm.model, newdata = databersih_scaled[test, ])
+lm.mse <- mean((lm.pred - y.test)^2)
+print(paste("MSE Regresi Linear:", lm.mse))
+
+#Melatih model regresi linear
+lm.model <- lm(incidence ~ ., data = databersih_scaled[train, ])
+
+#Prediksi pada data uji
+lm.pred <- predict(lm.model, newdata = databersih_scaled[test, ])
+
+#Hasil prediksi dan nilai aktual
+results <- data.frame(Actual = y.test, Predicted = lm.pred)
+print(results)
+
+summary(lm.model)
+```
+
+```{r}
+
+# MSE pada Train Set
+lm.pred.train <- predict(lm.model, newdata = databersih_scaled[train, ])
+lm.mse.train <- mean((lm.pred.train - y[train])^2)
+print(paste("MSE Train:", lm.mse.train))
+
+# MSE pada Test Set (sudah ada di kode Anda sebelumnya)
+lm.pred.test <- predict(lm.model, newdata = databersih_scaled[test, ])
+lm.mse.test <- mean((lm.pred.test - y[test])^2)
+print(paste("MSE Test:", lm.mse.test))
+
+```
+
+```{r}
+install.packages("glmnet")
+library(glmnet)
+
+#variabel prediktor (X) dan target (y)
+X_train <- as.matrix(databersih_scaled[train, -which(names(databersih_scaled) == "incidence")])
+y_train <- databersih_scaled$incidence[train]
+
+X_test <- as.matrix(databersih_scaled[test, -which(names(databersih_scaled) == "incidence")])
+y_test <- databersih_scaled$incidence[test]
+
+# Cari lambda optimal dengan cross-validation
+set.seed(123)  # Untuk memastikan hasil yang konsisten
+ridge_cv <- cv.glmnet(X_train, y_train, alpha = 0, family = "gaussian")
+
+# Ambil lambda terbaik
+best_lambda <- ridge_cv$lambda.min
+print(paste("Lambda terbaik:", best_lambda))
+
+# Latih model Ridge dengan lambda optimal
+ridge_model <- glmnet(X_train, y_train, alpha = 0, lambda = best_lambda)
+
+# Lihat koefisien variabel dalam model Ridge
+print(coef(ridge_model))
+
+# Prediksi di data test
+ridge_pred <- predict(ridge_model, s = best_lambda, newx = X_test)
+
+# Hitung Mean Squared Error (MSE)
+ridge_mse <- mean((ridge_pred - y_test)^2)
+print(paste("MSE dengan Ridge Regression:", ridge_mse))
+
+# Visualisasi Residuals
+par(mfrow = c(1,2))
+hist(ridge_pred - y_test, main = "Histogram Residuals", col = "gray")
+plot(ridge_pred, (ridge_pred - y_test), main = "Residuals vs Fitted", pch = 20)
+
+```
+
+```{r}
+library(car)
+vif_model <- lm(incidence ~ ., data = databersih_scaled)
+vif_values <- vif(vif_model)
+print(vif_values)
+
+```
+
+```{r}
+library(glmnet)
+set.seed(42)
+train <- sample(1:nrow(x), round(0.8 * nrow(x)))  # 70% training
+test <- setdiff(1:nrow(x), train)  # 30% testing
+y.test <- y[test]
+
+# Buat Grid Lambda
+grid <- 10^seq(10, -2, length = 100)
+
+# Regresi ridge
+ridge.mod <- glmnet(x, y, alpha = 0, lambda = grid)
+plot(ridge.mod, xvar = "lambda")
+
+# Ridge Model Training dengan lamda = 4
+ridge.mod <- glmnet(x[train, ], y[train], alpha = 0, lambda = grid, thresh = 1e-12) # Melatih model Ridge Regression
+ridge.pred <- predict(ridge.mod, s = 4, newx = x[test, ]) #prediksi pada data uji
+ridge.mse <- mean((ridge.pred - y.test)^2) # Menghitung Mean Squared Error (MSE) test
+
+#Hasil prediksi dibandingkan dengan nilai aktual
+results_ridge <- data.frame(Actual = y.test, Predicted = ridge.pred)
+head(results_ridge)
+head(results_ridge, 10)
+```
+
+```{r}
+
+# Plot hasil prediksi vs nilai aktual (Base R)
+plot(results_ridge$Actual, results_ridge$Predicted, 
+     main = "Prediksi vs Aktual (Ridge Regression)",
+     xlab = "Nilai Aktual", 
+     ylab = "Nilai Prediksi", 
+     col = "blue", 
+     pch = 16, 
+     cex = 0.7)
+
+# Tambahkan garis referensi y = x
+abline(a = 0, b = 1, col = "red") 
+
+
+# MSE pada Train Set
+ridge.pred.train <- predict(ridge.mod, s = 4, newx = x[train, ]) # Prediksi pada train set
+ridge.mse.train <- mean((ridge.pred.train - y[train])^2) # Hitung MSE Train
+print(paste("MSE Train Ridge:", ridge.mse.train))
+
+# MSE pada Test Set (sudah ada di kode sebelumnya)
+ridge.pred.test <- predict(ridge.mod, s = 4, newx = x[test, ]) # Prediksi pada test set
+ridge.mse.test <- mean((ridge.pred.test - y.test)^2) # Hitung MSE Test
+print(paste("MSE Test Ridge:", ridge.mse.test))
+```
+
+```{r}
+
+library(glmnet)
+set.seed(42)
+train <- sample(1:nrow(x), round(0.7 * nrow(x)))  # 70% training
+test <- setdiff(1:nrow(x), train)  # 30% testing
+y.test <- y[test]
+
+# Cross-validation untuk menentukan lambda optimal
+cv.ridge <- cv.glmnet(x[train, ], y[train], alpha = 0, lambda = grid)
+best_lambda <- cv.ridge$lambda.min  # Lambda optimal
+
+# Latih ulang model dengan lambda terbaik
+ridge.mod <- glmnet(x[train, ], y[train], alpha = 0, lambda = best_lambda)
+
+# Prediksi pada Test Set
+ridge.pred <- predict(ridge.mod, s = best_lambda, newx = x[test, ])
+ridge.mse <- mean((ridge.pred - y.test)^2)
+
+# MSE pada Training Set
+ridge.pred.train <- predict(ridge.mod, s = best_lambda, newx = x[train, ])
+ridge.mse.train <- mean((ridge.pred.train - y[train])^2)
+
+print(paste("Best Lambda Ridge:", best_lambda))
+print(paste("MSE Train Ridge Regression:", ridge.mse.train))
+print(paste("MSE Test Ridge Regression:", ridge.mse))
+
+# Plot Hasil Prediksi vs Aktual Ridge Regression
+plot(y.test, ridge.pred, 
+     main = "Prediksi vs Aktual (Ridge Regression)",
+     xlab = "Nilai Aktual", 
+     ylab = "Nilai Prediksi", 
+     col = "blue", 
+     pch = 16, 
+     cex = 0.7)
+abline(a = 0, b = 1, col = "red")
+
+coef(ridge.mod)
+```
+
+```{r}
+
+set.seed(42)
+train <- sample(1:nrow(x), round(0.7 * nrow(x)))  # 70% training
+test <- setdiff(1:nrow(x), train)  # 30% testing
+y.test <- y[test]
+
+# Cross-validation untuk Lasso Regression
+cv.lasso <- cv.glmnet(x[train, ], y[train], alpha = 1, lambda = grid)
+best_lambda_lasso <- cv.lasso$lambda.min  # Lambda optimal
+
+# Latih ulang model Lasso dengan lambda terbaik
+lasso.mod <- glmnet(x[train, ], y[train], alpha = 1, lambda = best_lambda_lasso)
+
+# Prediksi pada Test Set
+lasso.pred <- predict(lasso.mod, s = best_lambda_lasso, newx = x[test, ])
+lasso.mse <- mean((lasso.pred - y.test)^2)
+
+# MSE pada Training Set
+lasso.pred.train <- predict(lasso.mod, s = best_lambda_lasso, newx = x[train, ])
+lasso.mse.train <- mean((lasso.pred.train - y[train])^2)
+
+print(paste("Best Lambda Lasso:", best_lambda_lasso))
+print(paste("MSE Train Lasso Regression:", lasso.mse.train))
+print(paste("MSE Test Lasso Regression:", lasso.mse))
+
+
+plot(y.test, lasso.pred, 
+     main = "Prediksi vs Aktual (Lasso Regression)",
+     xlab = "Nilai Aktual", 
+     ylab = "Nilai Prediksi", 
+     col = "blue", 
+     pch = 16, 
+     cex = 0.7)
+abline(a = 0, b = 1, col = "red")
+```
+
+```{r}
+sum(coef(lasso.mod) != 0)
+```
+
+```{r}
+plot(cv.lasso)
+```
+
+```{r}
+best_lambda_lasso <- cv.lasso$lambda.1se
+
+print(paste("Best Lambda Lasso:", best_lambda_lasso))
+
+cat("Lambda terbaik (min MSE):", cv.lasso$lambda.min, "\n")
+cat("Lambda 1se (lebih sederhana):", cv.lasso$lambda.1se, "\n")
+
+```
+
+```{r}
+library(glmnet)
+set.seed(42)
+
+# Buat grid nilai lambda (opsional, bisa juga biarkan default)
+grid <- 10^seq(-1, -4, length = 100)
+
+# Cross-validation
+cv.ridge <- cv.glmnet(x, y, alpha = 0, lambda = grid)
+
+# Lambda terbaik berdasarkan MSE terkecil
+best_lambda_ridge <- cv.ridge$lambda.min
+
+# Tampilkan lambda terbaik
+print(paste("Best lambda untuk Ridge:", best_lambda_ridge))
+
+# Cross-validation
+cv.lasso <- cv.glmnet(x, y, alpha = 1, lambda = grid)
+
+# Lambda terbaik
+best_lambda_lasso <- cv.lasso$lambda.min
+
+# Tampilkan lambda terbaik
+print(paste("Best lambda untuk Lasso:", best_lambda_lasso))
+
+```
+
+```{r}
+# Lasso Regression dengan lambda terbaik (min MSE)
+lambda_min <- 0.00093260334688322  
+lasso.mod <- glmnet(x[train, ], y[train], alpha = 1, lambda = lambda_min)
+
+# Prediksi dan evaluasi
+lasso.pred.train <- predict(lasso.mod, s = lambda_min, newx = x[train, ])
+lasso.mse.train <- mean((lasso.pred.train - y[train])^2)
+
+lasso.pred.test <- predict(lasso.mod, s = lambda_min, newx = x[test, ])
+lasso.mse.test <- mean((lasso.pred.test - y[test])^2)
+
+# Cetak hasil
+cat("MSE Train (Lasso, lambda min):", lasso.mse.train, "\n")
+cat("MSE Test (Lasso, lambda min):", lasso.mse.test, "\n")
+coef(cv.lasso, s = "lambda.min")
+
+```
+
+```{r}
+library(glmnet)
+set.seed(42)
+train <- sample(1:nrow(x), round(0.7 * nrow(x)))  # 70% training
+test <- setdiff(1:nrow(x), train)  # 30% testing
+y.test <- y[test]
+
+# Set lambda secara manual
+chosen_lambda <- 0.00162975083462064
+
+# Latih model Ridge Regression dengan lambda yang ditentukan
+ridge.mod <- glmnet(x[train, ], y[train], alpha = 0, lambda = chosen_lambda)
+
+# Prediksi pada Test Set
+ridge.pred <- predict(ridge.mod, s = chosen_lambda, newx = x[test, ])
+ridge.mse <- mean((ridge.pred - y.test)^2)
+
+# MSE pada Training Set
+ridge.pred.train <- predict(ridge.mod, s = chosen_lambda, newx = x[train, ])
+ridge.mse.train <- mean((ridge.pred.train - y[train])^2)
+
+# Output
+print(paste("Chosen Lambda:", chosen_lambda))
+print(paste("MSE Train Ridge Regression:", ridge.mse.train))
+print(paste("MSE Test Ridge Regression:", ridge.mse))
+
+
+# Koefisien
+coef(ridge.mod)
+
+```
+
+reported ***ruraltotal\
+ruralgrowth*** urbantotal\
+urbangrowth .\
+waterpop ***waterrural*** waterurban ***sanitationpop** sanitationrural
+**sanitationurban\
+latitude** longitude* \*\*
+
+```{r}
+library(glmnet)
+
+# Misal df adalah data frame awal
+y <- databersih_scaled$incidence  # variabel target
+x_small <- as.matrix(databersih_scaled[, c("reported", "ruralgrowth", "waterpop", "waterrural", "waterurban", "sanitationpop", "sanitationrural", "latitude", "longitude")])  # subset fitur
+
+# Split data
+set.seed(42)
+train <- sample(1:nrow(x_small), round(0.7 * nrow(x_small)))
+test <- setdiff(1:nrow(x_small), train)
+y.test <- y[test]
+
+# --- Ridge ---
+chosen_lambda <- 0.003593814
+ridge.mod <- glmnet(x_small[train, ], y[train], alpha = 0, lambda = chosen_lambda)
+
+ridge.pred <- predict(ridge.mod, s = chosen_lambda, newx = x_small[test, ])
+ridge.mse <- mean((ridge.pred - y.test)^2)
+
+ridge.pred.train <- predict(ridge.mod, s = chosen_lambda, newx = x_small[train, ])
+ridge.mse.train <- mean((ridge.pred.train - y[train])^2)
+
+cat("Ridge MSE Train:", ridge.mse.train, "\n")
+cat("Ridge MSE Test:", ridge.mse, "\n")
+coef(ridge.mod)
+# --- Lasso ---
+lambda_min <- 1e-04
+
+lasso.mod <- glmnet(x_small[train, ], y[train], alpha = 1, lambda = lambda_min)
+
+lasso.pred.train <- predict(lasso.mod, s = lambda_min, newx = x_small[train, ])
+lasso.mse.train <- mean((lasso.pred.train - y[train])^2)
+
+lasso.pred.test <- predict(lasso.mod, s = lambda_min, newx = x_small[test, ])
+lasso.mse.test <- mean((lasso.pred.test - y[test])^2)
+
+cat("Lasso MSE Train:", lasso.mse.train, "\n")
+cat("Lasso MSE Test:", lasso.mse.test, "\n")
+coef(lasso.mod)
+
+```
+
+```{r}
+grid <- 10^seq(10, -4, length = 100)  # dari 10^10 ke 10^-4
+
+```
+
+```{r}
+cv.ridge <- cv.glmnet(x_small[train, ], y[train], alpha = 0, lambda = grid)
+best_lambda_ridge <- cv.ridge$lambda.min  # lambda terbaik
+
+# Cek lambda terbaik dan plot validasi silang
+print(best_lambda_ridge)
+plot(cv.ridge)
+
+```
+
+```{r}
+cv.lasso <- cv.glmnet(x_small[train, ], y[train], alpha = 1, lambda = grid)
+best_lambda_lasso <- cv.lasso$lambda.min
+
+# Cek lambda terbaik dan plot
+print(best_lambda_lasso)
+plot(cv.lasso)
+
+```
+
+```{r}
+library(glmnet)
+
+# Asumsikan x_small, y, train, test sudah tersedia
+
+# 1. Tuning lambda dengan CV
+grid <- 10^seq(10, -4, length = 100)
+cv.ridge <- cv.glmnet(x_small[train, ], y[train], alpha = 0, lambda = grid)
+best_lambda_ridge <- cv.ridge$lambda.min
+
+# 2. Latih ulang model dengan lambda terbaik
+ridge.final <- glmnet(x_small[train, ], y[train], alpha = 0, lambda = best_lambda_ridge)
+
+# 3. Prediksi di train dan test set
+ridge.pred.train <- predict(ridge.final, s = best_lambda_ridge, newx = x_small[train, ])
+ridge.pred.test <- predict(ridge.final, s = best_lambda_ridge, newx = x_small[test, ])
+
+# 4. Hitung MSE
+ridge.mse.train <- mean((ridge.pred.train - y[train])^2)
+ridge.mse.test <- mean((ridge.pred.test - y[test])^2)
+
+# 5. Tampilkan hasil
+cat("Ridge MSE Train:", ridge.mse.train, "\n")
+cat("Ridge MSE Test:", ridge.mse.test, "\n")
+
+```
+
+```{r}
+# 1. Tuning lambda dengan CV
+cv.lasso <- cv.glmnet(x_small[train, ], y[train], alpha = 1, lambda = grid)
+best_lambda_lasso <- cv.lasso$lambda.min
+
+# 2. Latih ulang model dengan lambda terbaik
+lasso.final <- glmnet(x_small[train, ], y[train], alpha = 1, lambda = best_lambda_lasso)
+
+# 3. Prediksi di train dan test set
+lasso.pred.train <- predict(lasso.final, s = best_lambda_lasso, newx = x_small[train, ])
+lasso.pred.test <- predict(lasso.final, s = best_lambda_lasso, newx = x_small[test, ])
+
+# 4. Hitung MSE
+lasso.mse.train <- mean((lasso.pred.train - y[train])^2)
+lasso.mse.test <- mean((lasso.pred.test - y[test])^2)
+
+# 5. Tampilkan hasil
+cat("Lasso MSE Train:", lasso.mse.train, "\n")
+cat("Lasso MSE Test:", lasso.mse.test, "\n")
+
+```
+
+```{r}
+
+```
+
+```{r}
+# Membuat data frame untuk menampilkan hasil dalam bentuk tabel
+results <- data.frame(
+  Model = c("Linear Regression", "Ridge Regression", "Lasso Regression"),
+  Best_Lambda = c("-", 0.01, 0.0132),
+  MSE_Train = c(lm.mse.train, ridge.mse.train, lasso.mse.train),
+  MSE_Test = c(lm.mse.test, ridge.mse, lasso.mse)
+)
+
+# Menampilkan tabel hasil
+print(results)
+
+```
+
+```{r}
+#library(car)
+#vif(lm.model)
+
+#hist(resid(lm.model))
+
+#lot(lm.model$fitted.values, resid(lm.model))
+
+# Hapus variabel dengan VIF tinggi
+#databersih_scaled <- subset(databersih_scaled, select = -c(ruraltotal, urbantotal))
+
+# model regresi
+#lm.model <- lm(incidence ~ ., data = databersih_scaled[train, ])
+
+# Evaluasi model kembali
+#summary(lm.model)
+
+#library(car)
+#vif(lm.model)
+
+#databersih_scaled$log_waterpop <- log(databersih_scaled$waterpop + 1)
+#databersih_scaled$sqrt_sanitationpop <- sqrt(databersih_scaled$sanitationpop)
+
+#sum(databersih_scaled$waterpop <= 0)  # Cek jumlah nilai nol/negatif di waterpop
+#sum(databersih_scaled$sanitationpop < 0)  # Cek jumlah nilai negatif di sanitationpop
+
+#databersih_scaled$log_waterpop <- log1p(databersih_scaled$waterpop)  # log(1 + x), menghindari log(0)
+
+#databersih_scaled$sqrt_sanitationpop <- sqrt(pmax(databersih_scaled$sanitationpop, 0))
+#sum(is.na(databersih_scaled$log_waterpop))  
+#sum(is.na(databersih_scaled$sqrt_sanitationpop))  
+
+#databersih_scaled$log_waterpop <- log1p(pmax(databersih_scaled$waterpop, 0))
+#sum(is.na(databersih_scaled$log_waterpop))  
+
+
+# Plot  hasil prediksi vs nilai aktual
+#plot(y.test, lm.pred, 
+#     main = "Prediksi vs Aktual",
+#     xlab = "Nilai Aktual", 
+#     ylab = "Nilai Prediksi", 
+#     col = "blue", 
+#     pch = 16, 
+#     cex = 0.7)
+
+# Tambahkan garis referensi y = x
+#abline(a = 0, b = 1, col = "red")
+```
+
+```{r}
+# Pastikan NaN tidak ada
+#databersih_scaled$log_waterpop <- log1p(pmax(databersih_scaled$waterpop, 0)) 
+#databersih_scaled$sqrt_sanitationpop <- sqrt(pmax(databersih_scaled$sanitationpop, 0))
+#databersih_scaled$waterpop_squared <- databersih_scaled$waterpop^2  
+
+#set.seed(123)  
+#n <- nrow(databersih_scaled)
+#train_idx <- sample(1:n, size = 0.8 * n)  
+#test_idx <- setdiff(1:n, train_idx)
+
+#train <- train_idx
+#test <- test_idx
+# Latih ulang model dengan fitur baru
+#lm.model <- lm(incidence ~ ., data = databersih_scaled[train, ])
+#summary(lm.model)
+
+# Cek Multikolinearitas
+#library(car)
+#vif(lm.model)
+
+# Lakukan Prediksi
+#lm.pred <- predict(lm.model, newdata = databersih_scaled[test, ])
+#lm.mse <- mean((lm.pred - y.test)^2)
+#print(paste("MSE setelah Feature Engineering:", lm.mse))
+
+# Evaluasi Residuals
+#par(mfrow = c(1,2))
+#hist(resid(lm.model), main = "Histogram Residuals", col = "gray")
+#plot(lm.model$fitted.values, resid(lm.model), main = "Residuals vs Fitted", pch = 20)
+
+```
+
+```{r}
+
+# MSE pada Train Set
+#lm.pred.train <- predict(lm.model, newdata = databersih_scaled[train, ])
+#lm.mse.train <- mean((lm.pred.train - y[train])^2)
+#print(paste("MSE Train:", lm.mse.train))
+
+# MSE pada Test Set (sudah ada di kode Anda sebelumnya)
+#lm.pred.test <- predict(lm.model, newdata = databersih_scaled[test, ])
+#lm.mse.test <- mean((lm.pred.test - y[test])^2)
+#print(paste("MSE Test:", lm.mse.test))
+
+```
+
+```{r}
+#set.seed(123)  # Untuk memastikan hasil yang sama setiap kali dijalankan
+#train_index <- sample(1:nrow(databersih_scaled), size = 0.7 * nrow(databersih_scaled))  
+#train <- databersih_scaled[train_index, ]  # Data train
+#test <- databersih_scaled[-train_index, ]  # Data test
+
+#y.test <- test$incidence  # Variabel target pada data test
+
+# Pastikan NaN tidak ada
+#databersih_scaled$log_waterpop <- log1p(pmax(databersih_scaled$waterpop, 0)) 
+#databersih_scaled$sqrt_sanitationpop <- #sqrt(pmax(databersih_scaled$sanitationpop, 0))
+#databersih_scaled$waterpop_squared <- databersih_scaled$waterpop^2  
+
+# Latih ulang model dengan fitur baru
+#lm.model <- lm(incidence ~ ., data = train)  # Gunakan train langsung
+#summary(lm.model)
+
+# Cek Multikolinearitas
+#library(car)
+#vif(lm.model)
+
+# Lakukan Prediksi
+#lm.pred <- predict(lm.model, newdata = test)  # Gunakan test langsung
+#lm.mse <- mean((lm.pred - y.test)^2)
+#print(paste("MSE setelah Feature Engineering:", lm.mse))
+
+# Evaluasi Residuals
+#par(mfrow = c(1,2))
+#hist(resid(lm.model), main = "Histogram Residuals", col = "gray")
+#plot(lm.model$fitted.values, resid(lm.model), main = "Residuals vs Fitted", #pch = 20)
+
+
+```
